@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#5f8f5f" />
+  <meta name="description" content="记录每日三餐、运动消耗与营养素比例的卡路里管理小程序" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
+  <title>每日卡路里 · 三餐管理</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            oat: { 50: '#faf8f4', 100: '#f3ede3', 200: '#e8dcc8', 300: '#d9c9ad' },
+            sage: { 50: '#f4f7f4', 100: '#e3ebe3', 200: '#c5d6c5', 400: '#7fa87f', 500: '#5f8f5f', 600: '#4a7350' },
+          },
+          fontFamily: {
+            sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+
+    body {
+      background: linear-gradient(145deg, #f7f3eb 0%, #eef5ee 45%, #e8f0e8 100%);
+      min-height: 100dvh;
+    }
+
+    .glass {
+      background: rgba(255, 255, 255, 0.72);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.85);
+    }
+
+    .ring-track { stroke: rgba(95, 143, 95, 0.12); }
+    .ring-progress {
+      stroke: url(#ringGradient);
+      stroke-linecap: round;
+      transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .meal-card {
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+    .meal-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 32px rgba(74, 115, 80, 0.08);
+    }
+
+    .btn {
+      transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .btn:active { transform: scale(0.97); }
+
+    .food-item {
+      animation: slideIn 0.35s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .modal-backdrop {
+      animation: fadeIn 0.25s ease forwards;
+    }
+    .modal-panel {
+      animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to   { opacity: 1; }
+    }
+    @keyframes scaleIn {
+      from { opacity: 0; transform: scale(0.92) translateY(12px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .modal-closing .modal-backdrop { animation: fadeOut 0.2s ease forwards; }
+    .modal-closing .modal-panel { animation: scaleOut 0.2s ease forwards; }
+    @keyframes fadeOut { to { opacity: 0; } }
+    @keyframes scaleOut { to { opacity: 0; transform: scale(0.95) translateY(8px); } }
+
+    input:focus { outline: none; }
+
+    .progress-bar-fill {
+      transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .macro-slice {
+      transition: d 0.6s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+    }
+  </style>
+</head>
+<body class="font-sans text-stone-700 antialiased">
+
+  <div class="max-w-lg mx-auto px-4 py-8 pb-16">
+
+    <!-- Header -->
+    <header class="text-center mb-8">
+      <p class="text-xs font-medium tracking-widest uppercase text-sage-500 mb-1">Daily Balance</p>
+      <h1 class="text-2xl font-semibold text-stone-800 tracking-tight">每日卡路里</h1>
+      <p class="text-sm text-stone-400 mt-1" id="today-date"></p>
+    </header>
+
+    <!-- Dashboard -->
+    <section class="glass rounded-3xl p-6 mb-6 shadow-sm shadow-sage-500/5">
+      <div class="flex items-center gap-6">
+
+        <!-- Ring Progress -->
+        <div class="relative flex-shrink-0 w-32 h-32">
+          <svg class="w-full h-full -rotate-90" viewBox="0 0 120 120">
+            <defs>
+              <linearGradient id="ringGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#7fa87f" />
+                <stop offset="100%" stop-color="#5f8f5f" />
+              </linearGradient>
+            </defs>
+            <circle class="ring-track" cx="60" cy="60" r="52" fill="none" stroke-width="10" />
+            <circle
+              id="ring-progress"
+              class="ring-progress"
+              cx="60" cy="60" r="52"
+              fill="none" stroke-width="10"
+              stroke-dasharray="326.73"
+              stroke-dashoffset="326.73"
+            />
+          </svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center">
+            <span id="ring-percent" class="text-2xl font-bold text-stone-800 leading-none">0%</span>
+            <span class="text-[10px] text-stone-400 mt-0.5">净摄入</span>
+          </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="flex-1 space-y-3">
+          <div class="flex justify-between items-baseline">
+            <span class="text-sm text-stone-400">目标</span>
+            <div class="flex items-baseline gap-1">
+              <input
+                id="goal-input"
+                type="number"
+                min="500"
+                max="10000"
+                step="50"
+                class="w-20 text-right text-lg font-semibold text-stone-800 bg-transparent border-b border-transparent hover:border-oat-300 focus:border-sage-400 transition-colors"
+                value="2000"
+              />
+              <span class="text-xs text-stone-400">kcal</span>
+            </div>
+          </div>
+          <div class="flex justify-between items-baseline">
+            <span class="text-sm text-stone-400">已摄入</span>
+            <span id="stat-consumed" class="text-lg font-semibold text-sage-600">0</span>
+          </div>
+          <div class="flex justify-between items-baseline">
+            <span class="text-sm text-stone-400">运动消耗</span>
+            <span id="stat-burned" class="text-lg font-semibold text-amber-600">−0</span>
+          </div>
+          <div class="flex justify-between items-baseline">
+            <span class="text-sm text-stone-400">剩余</span>
+            <span id="stat-remaining" class="text-lg font-semibold text-stone-800">2000</span>
+          </div>
+
+          <!-- Mini bar -->
+          <div class="h-1.5 rounded-full bg-sage-100 overflow-hidden mt-1">
+            <div id="bar-progress" class="progress-bar-fill h-full rounded-full bg-gradient-to-r from-sage-400 to-sage-500" style="width: 0%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Macro Pie Chart -->
+      <div id="macro-section" class="mt-5 pt-5 border-t border-oat-200/60">
+        <p class="text-xs font-medium text-stone-400 uppercase tracking-wider mb-3">营养素比例</p>
+        <div class="flex items-center gap-5">
+          <div class="relative flex-shrink-0 w-24 h-24">
+            <svg id="macro-pie" class="w-full h-full" viewBox="0 0 100 100"></svg>
+            <div id="macro-pie-empty" class="absolute inset-0 flex items-center justify-center">
+              <span class="text-[10px] text-stone-300 text-center leading-tight">暂无<br/>数据</span>
+            </div>
+          </div>
+          <div id="macro-legend" class="flex-1 grid grid-cols-3 gap-2 text-center">
+            <div>
+              <div class="w-2 h-2 rounded-full bg-[#d4a853] mx-auto mb-1"></div>
+              <p class="text-[10px] text-stone-400">碳水</p>
+              <p id="macro-carbs" class="text-sm font-semibold text-stone-700 tabular-nums">0g</p>
+              <p id="macro-carbs-pct" class="text-[10px] text-stone-400">0%</p>
+            </div>
+            <div>
+              <div class="w-2 h-2 rounded-full bg-[#6b9bd1] mx-auto mb-1"></div>
+              <p class="text-[10px] text-stone-400">蛋白质</p>
+              <p id="macro-protein" class="text-sm font-semibold text-stone-700 tabular-nums">0g</p>
+              <p id="macro-protein-pct" class="text-[10px] text-stone-400">0%</p>
+            </div>
+            <div>
+              <div class="w-2 h-2 rounded-full bg-[#c4956a] mx-auto mb-1"></div>
+              <p class="text-[10px] text-stone-400">脂肪</p>
+              <p id="macro-fat" class="text-sm font-semibold text-stone-700 tabular-nums">0g</p>
+              <p id="macro-fat-pct" class="text-[10px] text-stone-400">0%</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Exercise Card -->
+    <section id="exercise-section" class="meal-card glass rounded-2xl p-5 mb-6 shadow-sm shadow-amber-500/5">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">🏃</span>
+          <div>
+            <h3 class="font-semibold text-stone-800">每日运动消耗</h3>
+            <p class="text-xs text-stone-400">消耗将从总摄入中扣除</p>
+          </div>
+        </div>
+        <div class="text-right">
+          <p id="exercise-total" class="text-lg font-bold text-amber-600 tabular-nums">0</p>
+          <p class="text-[10px] text-stone-400">kcal</p>
+        </div>
+      </div>
+      <div id="exercise-list" class="space-y-0.5 mb-4 min-h-[2rem]">
+        <p class="text-sm text-stone-300 py-2 text-center">暂无记录</p>
+      </div>
+      <button
+        id="add-exercise-btn"
+        class="btn w-full py-2.5 rounded-xl border border-dashed border-amber-200 text-amber-600 text-sm font-medium hover:bg-amber-50 hover:border-amber-300 hover:text-amber-700"
+      >
+        + 添加运动
+      </button>
+    </section>
+
+    <!-- Meal Cards -->
+    <div id="meals-container" class="space-y-4"></div>
+
+    <!-- Footer hint -->
+    <p class="text-center text-xs text-stone-300 mt-8">数据已自动保存至本地 · 刷新不丢失</p>
+  </div>
+
+  <!-- Add Exercise Modal -->
+  <div id="exercise-modal" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center p-4">
+    <div id="exercise-modal-backdrop" class="modal-backdrop absolute inset-0 bg-stone-900/20 backdrop-blur-sm"></div>
+    <div class="modal-panel relative w-full max-w-md glass rounded-3xl p-6 shadow-xl shadow-amber-500/10">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <p class="text-xs font-medium text-amber-600 uppercase tracking-wider">添加运动</p>
+          <h2 class="text-lg font-semibold text-stone-800 mt-0.5">记录消耗</h2>
+        </div>
+        <button id="exercise-modal-close" class="btn w-9 h-9 rounded-full bg-oat-100 hover:bg-oat-200 flex items-center justify-center text-stone-400 hover:text-stone-600">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <label class="block text-sm text-stone-500 mb-2" for="exercise-name">运动名称</label>
+      <input
+        id="exercise-name"
+        type="text"
+        placeholder="例如：跑步、游泳、瑜伽、骑行…"
+        class="w-full px-4 py-3 rounded-2xl bg-white/80 border border-oat-200 text-stone-800 placeholder:text-stone-300 focus:border-amber-400 focus:ring-2 focus:ring-amber-400/20 transition-all"
+        autocomplete="off"
+      />
+
+      <div id="burn-preview" class="hidden mt-4 p-4 rounded-2xl bg-amber-50/80 border border-amber-100">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs text-amber-600">预估消耗</p>
+            <p id="burn-value" class="text-2xl font-bold text-amber-600 mt-0.5">— kcal</p>
+          </div>
+          <div id="burn-badge" class="text-xs px-3 py-1 rounded-full bg-white text-amber-600 font-medium"></div>
+        </div>
+        <p id="burn-note" class="text-xs text-stone-400 mt-2"></p>
+      </div>
+
+      <button
+        id="exercise-modal-submit"
+        disabled
+        class="btn w-full mt-5 py-3.5 rounded-2xl bg-amber-500 text-white font-medium hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-amber-500/20 hover:shadow-lg hover:shadow-amber-500/25"
+      >
+        确认添加
+      </button>
+    </div>
+  </div>
+
+  <!-- Add Food Modal -->
+  <div id="modal" class="fixed inset-0 z-50 hidden items-end sm:items-center justify-center p-4">
+    <div id="modal-backdrop" class="modal-backdrop absolute inset-0 bg-stone-900/20 backdrop-blur-sm"></div>
+    <div class="modal-panel relative w-full max-w-md glass rounded-3xl p-6 shadow-xl shadow-sage-500/10">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <p class="text-xs font-medium text-sage-500 uppercase tracking-wider">添加食物</p>
+          <h2 id="modal-meal-title" class="text-lg font-semibold text-stone-800 mt-0.5">早餐</h2>
+        </div>
+        <button id="modal-close" class="btn w-9 h-9 rounded-full bg-oat-100 hover:bg-oat-200 flex items-center justify-center text-stone-400 hover:text-stone-600">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <label class="block text-sm text-stone-500 mb-2" for="food-name">食物名称</label>
+      <input
+        id="food-name"
+        type="text"
+        placeholder="例如：燕麦粥、鸡胸肉、苹果…"
+        class="w-full px-4 py-3 rounded-2xl bg-white/80 border border-oat-200 text-stone-800 placeholder:text-stone-300 focus:border-sage-400 focus:ring-2 focus:ring-sage-400/20 transition-all"
+        autocomplete="off"
+      />
+
+      <!-- Estimate preview -->
+      <div id="estimate-preview" class="hidden mt-4 p-4 rounded-2xl bg-sage-50/80 border border-sage-100">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs text-sage-500">预估热量</p>
+            <p id="estimate-value" class="text-2xl font-bold text-sage-600 mt-0.5">— kcal</p>
+          </div>
+          <div id="estimate-badge" class="text-xs px-3 py-1 rounded-full bg-white text-sage-500 font-medium"></div>
+        </div>
+        <p id="estimate-note" class="text-xs text-stone-400 mt-2"></p>
+      </div>
+
+      <!-- Optional macros -->
+      <div id="macro-inputs" class="hidden mt-4">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-sm text-stone-500">营养成分 <span class="text-stone-300">（可选，可修改）</span></p>
+          <span class="text-[10px] text-stone-300">单位：克</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="text-[10px] text-[#d4a853] font-medium mb-1 block" for="macro-carbs-input">碳水</label>
+            <input id="macro-carbs-input" type="number" min="0" step="0.1" placeholder="—"
+              class="w-full px-3 py-2 rounded-xl bg-white/80 border border-oat-200 text-stone-800 text-sm text-center placeholder:text-stone-300 focus:border-[#d4a853] focus:ring-2 focus:ring-[#d4a853]/20 transition-all" />
+          </div>
+          <div>
+            <label class="text-[10px] text-[#6b9bd1] font-medium mb-1 block" for="macro-protein-input">蛋白质</label>
+            <input id="macro-protein-input" type="number" min="0" step="0.1" placeholder="—"
+              class="w-full px-3 py-2 rounded-xl bg-white/80 border border-oat-200 text-stone-800 text-sm text-center placeholder:text-stone-300 focus:border-[#6b9bd1] focus:ring-2 focus:ring-[#6b9bd1]/20 transition-all" />
+          </div>
+          <div>
+            <label class="text-[10px] text-[#c4956a] font-medium mb-1 block" for="macro-fat-input">脂肪</label>
+            <input id="macro-fat-input" type="number" min="0" step="0.1" placeholder="—"
+              class="w-full px-3 py-2 rounded-xl bg-white/80 border border-oat-200 text-stone-800 text-sm text-center placeholder:text-stone-300 focus:border-[#c4956a] focus:ring-2 focus:ring-[#c4956a]/20 transition-all" />
+          </div>
+        </div>
+      </div>
+
+      <button
+        id="modal-submit"
+        disabled
+        class="btn w-full mt-5 py-3.5 rounded-2xl bg-sage-500 text-white font-medium hover:bg-sage-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-sage-500/20 hover:shadow-lg hover:shadow-sage-500/25"
+      >
+        确认添加
+      </button>
+    </div>
+  </div>
+
+  <script>
+    /* ─── Config ─── */
+    const MEALS = [
+      { id: 'breakfast', label: '早餐', icon: '🌅', time: '06:00 – 10:00' },
+      { id: 'lunch',     label: '午餐', icon: '☀️', time: '11:00 – 14:00' },
+      { id: 'dinner',    label: '晚餐', icon: '🌙', time: '17:00 – 21:00' },
+      { id: 'snack',     label: '加餐', icon: '🍵', time: '随时' },
+    ];
+
+    const STORAGE_KEY = 'calorie-tracker-v1';
+
+    /* Common food calorie database (per typical serving, kcal) */
+    const FOOD_DB = {
+      '燕麦': 150, '燕麦粥': 120, '燕麦片': 150, '牛奶': 120, '酸奶': 100,
+      '鸡蛋': 78, '煎蛋': 90, '水煮蛋': 78, '蛋': 78, '吐司': 80, '面包': 80,
+      '全麦面包': 90, '包子': 200, '馒头': 220, '油条': 270, '豆浆': 80,
+      '粥': 100, '白粥': 80, '小米粥': 90, '稀饭': 80, '馄饨': 250, '饺子': 280,
+      '面条': 350, '拉面': 450, '意面': 380, '米饭': 230, '白米饭': 230,
+      '炒饭': 400, '盖浇饭': 550, '便当': 600, '三明治': 350, '汉堡': 550,
+      '沙拉': 180, '蔬菜沙拉': 120, '水果沙拉': 150,
+      '苹果': 95, '香蕉': 105, '橙子': 62, '葡萄': 69, '草莓': 50,
+      '西瓜': 46, '芒果': 99, '梨': 57, '桃子': 59, '猕猴桃': 61,
+      '鸡胸肉': 165, '鸡肉': 200, '鸡腿': 280, '鸡翅': 240, '牛肉': 250,
+      '牛排': 350, '猪肉': 250, '排骨': 300, '鱼': 180, '三文鱼': 220,
+      '虾': 120, '豆腐': 80, '蔬菜': 50, '西兰花': 55, '番茄': 22,
+      '土豆': 160, '红薯': 180, '玉米': 96, '胡萝卜': 41,
+      '咖啡': 5, '拿铁': 120, '奶茶': 350, '可乐': 140, '果汁': 110,
+      '水': 0, '茶': 2, '绿茶': 2,
+      '蛋糕': 350, '饼干': 150, '巧克力': 230, '冰淇淋': 200, '薯片': 160,
+      '坚果': 180, '花生': 160, '腰果': 160, '核桃': 185,
+      '披萨': 600, '寿司': 350, '刺身': 200, '火锅': 800, '麻辣烫': 600,
+      '烧烤': 500, '炸鸡': 400, '薯条': 320, '热狗': 300,
+      '蛋白粉': 120, '能量棒': 200, '格兰诺拉': 250,
+    };
+
+    /* Macro database (carbs, protein, fat in grams per serving) */
+    const MACRO_DB = {
+      '燕麦': { c: 27, p: 5, f: 3 }, '燕麦粥': { c: 22, p: 4, f: 2 }, '燕麦片': { c: 27, p: 5, f: 3 },
+      '牛奶': { c: 12, p: 8, f: 5 }, '酸奶': { c: 15, p: 10, f: 3 },
+      '鸡蛋': { c: 0.6, p: 6, f: 5 }, '煎蛋': { c: 0.6, p: 6, f: 7 }, '水煮蛋': { c: 0.6, p: 6, f: 5 },
+      '吐司': { c: 15, p: 3, f: 1 }, '面包': { c: 15, p: 3, f: 1 }, '全麦面包': { c: 14, p: 5, f: 2 },
+      '包子': { c: 30, p: 8, f: 5 }, '馒头': { c: 48, p: 7, f: 1 }, '油条': { c: 28, p: 5, f: 14 },
+      '豆浆': { c: 6, p: 7, f: 4 }, '粥': { c: 18, p: 2, f: 0.5 }, '白粥': { c: 15, p: 1.5, f: 0.3 },
+      '米饭': { c: 50, p: 4, f: 0.5 }, '白米饭': { c: 50, p: 4, f: 0.5 }, '炒饭': { c: 55, p: 10, f: 12 },
+      '面条': { c: 60, p: 12, f: 8 }, '意面': { c: 55, p: 12, f: 6 },
+      '苹果': { c: 25, p: 0.5, f: 0.3 }, '香蕉': { c: 27, p: 1.3, f: 0.4 },
+      '鸡胸肉': { c: 0, p: 31, f: 3.6 }, '鸡肉': { c: 0, p: 25, f: 8 },
+      '牛肉': { c: 0, p: 26, f: 12 }, '牛排': { c: 0, p: 30, f: 18 },
+      '鱼': { c: 0, p: 22, f: 6 }, '三文鱼': { c: 0, p: 25, f: 13 },
+      '虾': { c: 0, p: 24, f: 0.3 }, '豆腐': { c: 2, p: 8, f: 4 },
+      '沙拉': { c: 8, p: 3, f: 6 }, '蔬菜': { c: 8, p: 2, f: 0.3 },
+      '咖啡': { c: 0, p: 0, f: 0 }, '拿铁': { c: 12, p: 6, f: 6 },
+      '蛋糕': { c: 45, p: 5, f: 18 }, '坚果': { c: 6, p: 5, f: 14 },
+      '汉堡': { c: 35, p: 18, f: 22 }, '披萨': { c: 55, p: 20, f: 22 },
+    };
+
+    const MACRO_RATIO_FALLBACK = [
+      { keywords: ['肉', '鸡', '牛', '猪', '羊', '鱼', '虾', '蟹', '鸭', '鹅', '蛋'], ratios: { c: 0.05, p: 0.55, f: 0.40 } },
+      { keywords: ['面', '粉', '饭', '粥', '饺', '包', '饼', '麦', '米'], ratios: { c: 0.70, p: 0.15, f: 0.15 } },
+      { keywords: ['果', '苹果', '梨', '桃', '莓', '瓜', '橙', '柚', '蕉'], ratios: { c: 0.85, p: 0.10, f: 0.05 } },
+      { keywords: ['菜', '蔬', '沙拉', '豆', '菇', '笋'], ratios: { c: 0.60, p: 0.25, f: 0.15 } },
+      { keywords: ['奶', '乳', '酪', '芝士'], ratios: { c: 0.30, p: 0.25, f: 0.45 } },
+      { keywords: ['甜', '糖', '糕', '点', '冰', '巧', '零', '薯'], ratios: { c: 0.50, p: 0.05, f: 0.45 } },
+      { keywords: ['饮', '茶', '咖啡', '汁', '酒', '可乐'], ratios: { c: 0.90, p: 0.05, f: 0.05 } },
+    ];
+
+    const MACRO_COLORS = { carbs: '#d4a853', protein: '#6b9bd1', fat: '#c4956a' };
+
+    /* Category fallback calories when no match found */
+    const CATEGORY_FALLBACK = [
+      { keywords: ['肉', '鸡', '牛', '猪', '羊', '鱼', '虾', '蟹', '鸭', '鹅'], cal: 220 },
+      { keywords: ['面', '粉', '饭', '粥', '饺', '包', '饼', '麦'], cal: 300 },
+      { keywords: ['果', '苹果', '梨', '桃', '莓', '瓜', '橙', '柚'], cal: 80 },
+      { keywords: ['菜', '蔬', '沙拉', '豆', '菇', '笋'], cal: 60 },
+      { keywords: ['奶', '乳', '酪', '芝士', '黄油'], cal: 150 },
+      { keywords: ['饮', '茶', '咖啡', '汁', '酒', '可乐', '汽水'], cal: 100 },
+      { keywords: ['甜', '糖', '糕', '点', '冰', '巧', '零', '薯'], cal: 200 },
+    ];
+
+    const DEFAULT_CAL = 150;
+
+    /* Exercise burn database (kcal per typical 30-min session) */
+    const EXERCISE_DB = {
+      '跑步': 300, '慢跑': 250, '快跑': 400, '冲刺跑': 450,
+      '游泳': 350, '自由泳': 380, '蛙泳': 340, '蝶泳': 420,
+      '骑行': 250, '自行车': 250, '动感单车': 320,
+      '瑜伽': 120, '普拉提': 150, '拉伸': 80,
+      '健身': 220, '力量训练': 250, '举重': 280, '撸铁': 250,
+      '跳绳': 350, '爬山': 400, '徒步': 280, '登山': 420,
+      'HIIT': 400, '高强度间歇': 400, '有氧': 250,
+      '步行': 120, '走路': 120, '散步': 100, '快走': 180,
+      '羽毛球': 280, '网球': 300, '乒乓球': 200,
+      '篮球': 350, '足球': 400, '排球': 250,
+      '跳舞': 220, '舞蹈': 220, '尊巴': 280,
+      '椭圆机': 250, '划船机': 280, '跑步机': 300,
+      '拳击': 350, '跆拳道': 380, '武术': 320,
+      '滑雪': 400, '滑冰': 300, '攀岩': 350,
+      '太极': 100, '八段锦': 90, '广场舞': 180,
+      '俯卧撑': 150, '仰卧起坐': 120, '平板支撑': 100,
+    };
+
+    const EXERCISE_CATEGORY_FALLBACK = [
+      { keywords: ['跑', '奔', '冲刺'], cal: 300 },
+      { keywords: ['泳', '游'], cal: 350 },
+      { keywords: ['骑', '车', '单车'], cal: 250 },
+      { keywords: ['瑜伽', '普拉提', '拉伸', '太极'], cal: 120 },
+      { keywords: ['球', '篮', '足', '羽', '网'], cal: 300 },
+      { keywords: ['跳', '绳'], cal: 350 },
+      { keywords: ['爬', '山', '徒步'], cal: 350 },
+      { keywords: ['舞', '操'], cal: 200 },
+      { keywords: ['拳', '击', '格斗'], cal: 350 },
+      { keywords: ['健身', '力量', '举重', '铁'], cal: 250 },
+    ];
+
+    /* ─── State ─── */
+    let state = loadState();
+    let activeMeal = null;
+    let currentEstimate = null;
+    let currentBurnEstimate = null;
+
+    function defaultState() {
+      return {
+        goal: 2000,
+        meals: Object.fromEntries(MEALS.map(m => [m.id, []])),
+        exercises: [],
+      };
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return defaultState();
+        const parsed = JSON.parse(raw);
+        return {
+          goal: parsed.goal ?? 2000,
+          meals: { ...defaultState().meals, ...parsed.meals },
+          exercises: Array.isArray(parsed.exercises) ? parsed.exercises : [],
+        };
+      } catch {
+        return defaultState();
+      }
+    }
+
+    function saveState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    /* ─── Calorie Estimation ─── */
+    function estimateCalories(name) {
+      const trimmed = name.trim();
+      if (!trimmed) return null;
+
+      // Exact match
+      if (FOOD_DB[trimmed] !== undefined) {
+        return { calories: FOOD_DB[trimmed], confidence: '精确匹配', source: trimmed };
+      }
+
+      // Partial match — longest key wins
+      let bestMatch = null;
+      let bestLen = 0;
+      for (const [key, cal] of Object.entries(FOOD_DB)) {
+        if (trimmed.includes(key) || key.includes(trimmed)) {
+          if (key.length > bestLen) {
+            bestLen = key.length;
+            bestMatch = { calories: cal, confidence: '相似匹配', source: key };
+          }
+        }
+      }
+      if (bestMatch) return bestMatch;
+
+      // Category fallback
+      for (const cat of CATEGORY_FALLBACK) {
+        if (cat.keywords.some(kw => trimmed.includes(kw))) {
+          return { calories: cat.cal, confidence: '分类估算', source: cat.keywords[0] + '类' };
+        }
+      }
+
+      // Length-based heuristic for unknown foods
+      const heuristic = Math.min(400, Math.max(80, trimmed.length * 25));
+      return { calories: heuristic, confidence: '智能估算', source: '未知食物' };
+    }
+
+    function macrosFromCalories(calories, ratios) {
+      const cCal = calories * ratios.c;
+      const pCal = calories * ratios.p;
+      const fCal = calories * ratios.f;
+      return {
+        carbs: Math.round(cCal / 4 * 10) / 10,
+        protein: Math.round(pCal / 4 * 10) / 10,
+        fat: Math.round(fCal / 9 * 10) / 10,
+      };
+    }
+
+    function estimateMacros(name, calories) {
+      const trimmed = name.trim();
+      if (!trimmed || !calories) return { carbs: 0, protein: 0, fat: 0 };
+
+      if (MACRO_DB[trimmed]) {
+        const m = MACRO_DB[trimmed];
+        return { carbs: m.c, protein: m.p, fat: m.f };
+      }
+
+      let bestMatch = null;
+      let bestLen = 0;
+      for (const [key, m] of Object.entries(MACRO_DB)) {
+        if (trimmed.includes(key) || key.includes(trimmed)) {
+          if (key.length > bestLen) {
+            bestLen = key.length;
+            bestMatch = { carbs: m.c, protein: m.p, fat: m.f };
+          }
+        }
+      }
+      if (bestMatch) return bestMatch;
+
+      for (const cat of MACRO_RATIO_FALLBACK) {
+        if (cat.keywords.some(kw => trimmed.includes(kw))) {
+          return macrosFromCalories(calories, cat.ratios);
+        }
+      }
+
+      return macrosFromCalories(calories, { c: 0.50, p: 0.25, f: 0.25 });
+    }
+
+    function parseMacroInput(input) {
+      const val = parseFloat(input.value);
+      return isNaN(val) || val < 0 ? null : Math.round(val * 10) / 10;
+    }
+
+    function getFoodMacros(food) {
+      if (food.carbs != null || food.protein != null || food.fat != null) {
+        return {
+          carbs: food.carbs ?? 0,
+          protein: food.protein ?? 0,
+          fat: food.fat ?? 0,
+        };
+      }
+      return estimateMacros(food.name, food.calories);
+    }
+
+    function getTotalMacros() {
+      const foods = Object.values(state.meals).flat();
+      return foods.reduce((acc, f) => {
+        const m = getFoodMacros(f);
+        acc.carbs += m.carbs;
+        acc.protein += m.protein;
+        acc.fat += m.fat;
+        return acc;
+      }, { carbs: 0, protein: 0, fat: 0 });
+    }
+
+    function pieSlice(cx, cy, r, startAngle, endAngle) {
+      if (endAngle - startAngle >= 359.99) {
+        return `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx - 0.01} ${cy - r} Z`;
+      }
+      const rad = Math.PI / 180;
+      const x1 = cx + r * Math.sin(startAngle * rad);
+      const y1 = cy - r * Math.cos(startAngle * rad);
+      const x2 = cx + r * Math.sin(endAngle * rad);
+      const y2 = cy - r * Math.cos(endAngle * rad);
+      const large = endAngle - startAngle > 180 ? 1 : 0;
+      return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    }
+
+    function renderMacroChart() {
+      const macros = getTotalMacros();
+      const cCal = macros.carbs * 4;
+      const pCal = macros.protein * 4;
+      const fCal = macros.fat * 9;
+      const totalCal = cCal + pCal + fCal;
+
+      els.macroCarbs.textContent = Math.round(macros.carbs) + 'g';
+      els.macroProtein.textContent = Math.round(macros.protein) + 'g';
+      els.macroFat.textContent = Math.round(macros.fat) + 'g';
+
+      if (totalCal <= 0) {
+        els.macroPie.innerHTML = '';
+        els.macroPieEmpty.classList.remove('hidden');
+        els.macroCarbsPct.textContent = '0%';
+        els.macroProteinPct.textContent = '0%';
+        els.macroFatPct.textContent = '0%';
+        return;
+      }
+
+      els.macroPieEmpty.classList.add('hidden');
+      const cPct = Math.round(cCal / totalCal * 100);
+      const pPct = Math.round(pCal / totalCal * 100);
+      const fPct = 100 - cPct - pPct;
+      els.macroCarbsPct.textContent = cPct + '%';
+      els.macroProteinPct.textContent = pPct + '%';
+      els.macroFatPct.textContent = fPct + '%';
+
+      const segments = [
+        { cal: cCal, color: MACRO_COLORS.carbs },
+        { cal: pCal, color: MACRO_COLORS.protein },
+        { cal: fCal, color: MACRO_COLORS.fat },
+      ].filter(s => s.cal > 0);
+
+      let angle = 0;
+      els.macroPie.innerHTML = segments.map(s => {
+        const sweep = (s.cal / totalCal) * 360;
+        const path = pieSlice(50, 50, 42, angle, angle + sweep);
+        angle += sweep;
+        return `<path class="macro-slice" d="${path}" fill="${s.color}" opacity="0.92"/>`;
+      }).join('');
+    }
+
+    function estimateBurn(name) {
+      const trimmed = name.trim();
+      if (!trimmed) return null;
+
+      if (EXERCISE_DB[trimmed] !== undefined) {
+        return { calories: EXERCISE_DB[trimmed], confidence: '精确匹配', source: trimmed };
+      }
+
+      let bestMatch = null;
+      let bestLen = 0;
+      for (const [key, cal] of Object.entries(EXERCISE_DB)) {
+        if (trimmed.includes(key) || key.includes(trimmed)) {
+          if (key.length > bestLen) {
+            bestLen = key.length;
+            bestMatch = { calories: cal, confidence: '相似匹配', source: key };
+          }
+        }
+      }
+      if (bestMatch) return bestMatch;
+
+      for (const cat of EXERCISE_CATEGORY_FALLBACK) {
+        if (cat.keywords.some(kw => trimmed.includes(kw))) {
+          return { calories: cat.cal, confidence: '分类估算', source: cat.keywords[0] + '类' };
+        }
+      }
+
+      const heuristic = Math.min(500, Math.max(100, trimmed.length * 30));
+      return { calories: heuristic, confidence: '智能估算', source: '未知运动' };
+    }
+
+    /* ─── DOM refs ─── */
+    const $ = id => document.getElementById(id);
+
+    const els = {
+      todayDate:     $('today-date'),
+      goalInput:     $('goal-input'),
+      statConsumed:  $('stat-consumed'),
+      statBurned:    $('stat-burned'),
+      statRemaining: $('stat-remaining'),
+      ringProgress:  $('ring-progress'),
+      ringPercent:   $('ring-percent'),
+      barProgress:   $('bar-progress'),
+      macroPie:      $('macro-pie'),
+      macroPieEmpty: $('macro-pie-empty'),
+      macroCarbs:    $('macro-carbs'),
+      macroProtein:  $('macro-protein'),
+      macroFat:      $('macro-fat'),
+      macroCarbsPct: $('macro-carbs-pct'),
+      macroProteinPct: $('macro-protein-pct'),
+      macroFatPct:   $('macro-fat-pct'),
+      mealsContainer:$('meals-container'),
+      exerciseList:  $('exercise-list'),
+      exerciseTotal: $('exercise-total'),
+      addExerciseBtn:$('add-exercise-btn'),
+      exerciseModal: $('exercise-modal'),
+      exerciseModalBackdrop: $('exercise-modal-backdrop'),
+      exerciseModalClose: $('exercise-modal-close'),
+      exerciseName:  $('exercise-name'),
+      burnPreview:   $('burn-preview'),
+      burnValue:     $('burn-value'),
+      burnBadge:     $('burn-badge'),
+      burnNote:      $('burn-note'),
+      exerciseModalSubmit: $('exercise-modal-submit'),
+      modal:         $('modal'),
+      modalBackdrop: $('modal-backdrop'),
+      modalMealTitle:$('modal-meal-title'),
+      modalClose:    $('modal-close'),
+      foodName:      $('food-name'),
+      estimatePreview: $('estimate-preview'),
+      estimateValue: $('estimate-value'),
+      estimateBadge: $('estimate-badge'),
+      estimateNote:  $('estimate-note'),
+      macroInputs:   $('macro-inputs'),
+      macroCarbsInput: $('macro-carbs-input'),
+      macroProteinInput: $('macro-protein-input'),
+      macroFatInput: $('macro-fat-input'),
+      modalSubmit:   $('modal-submit'),
+    };
+
+    const RING_CIRCUMFERENCE = 2 * Math.PI * 52; // ≈ 326.73
+
+    /* ─── Render ─── */
+    function renderDashboard() {
+      const intake = getTotalConsumed();
+      const burned = getTotalBurned();
+      const net = Math.max(0, intake - burned);
+      const goal = state.goal;
+      const remaining = goal - intake + burned;
+      const pct = goal > 0 ? Math.min(100, (net / goal) * 100) : 0;
+
+      els.goalInput.value = goal;
+      els.statConsumed.textContent = intake;
+      els.statBurned.textContent = burned > 0 ? '−' + burned : '0';
+      els.statRemaining.textContent = remaining;
+
+      const offset = RING_CIRCUMFERENCE * (1 - pct / 100);
+      els.ringProgress.style.strokeDashoffset = offset;
+      els.ringPercent.textContent = Math.round(pct) + '%';
+      els.barProgress.style.width = pct + '%';
+
+      const over = net > goal;
+      els.statRemaining.className = over
+        ? 'text-lg font-semibold text-red-400'
+        : remaining > goal
+          ? 'text-lg font-semibold text-amber-600'
+          : 'text-lg font-semibold text-stone-800';
+      els.ringProgress.style.stroke = over ? '#f87171' : '';
+      renderMacroChart();
+    }
+
+    function getTotalConsumed() {
+      return Object.values(state.meals).flat().reduce((s, f) => s + f.calories, 0);
+    }
+
+    function getTotalBurned() {
+      return (state.exercises || []).reduce((s, e) => s + e.calories, 0);
+    }
+
+    function getMealTotal(mealId) {
+      return (state.meals[mealId] || []).reduce((s, f) => s + f.calories, 0);
+    }
+
+    function renderMeals() {
+      els.mealsContainer.innerHTML = MEALS.map(meal => {
+        const foods = state.meals[meal.id] || [];
+        const total = getMealTotal(meal.id);
+
+        const foodItems = foods.length === 0
+          ? `<p class="text-sm text-stone-300 py-2 text-center">暂无记录</p>`
+          : foods.map(f => {
+              const m = getFoodMacros(f);
+              const hasMacro = m.carbs > 0 || m.protein > 0 || m.fat > 0;
+              const macroLine = hasMacro
+                ? `<p class="text-[10px] text-stone-400 mt-0.5 tabular-nums">C ${Math.round(m.carbs)} · P ${Math.round(m.protein)} · F ${Math.round(m.fat)}</p>`
+                : `<p class="text-xs text-stone-400 mt-0.5">${escHtml(f.confidence)}</p>`;
+              return `
+              <div class="food-item flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-oat-50/60 group transition-colors" data-meal="${meal.id}" data-id="${f.id}">
+                <div class="flex-1 min-w-0">
+                  <p class="text-sm font-medium text-stone-700 truncate">${escHtml(f.name)}</p>
+                  ${macroLine}
+                </div>
+                <div class="flex items-center gap-3 ml-3">
+                  <span class="text-sm font-semibold text-sage-600 tabular-nums">${f.calories} <span class="text-xs font-normal text-stone-400">kcal</span></span>
+                  <button
+                    class="btn delete-btn w-7 h-7 rounded-lg opacity-0 group-hover:opacity-100 bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-500 flex items-center justify-center transition-all"
+                    data-meal="${meal.id}" data-id="${f.id}" aria-label="删除"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                  </button>
+                </div>
+              </div>
+            `;
+            }).join('');
+
+        return `
+          <div class="meal-card glass rounded-2xl p-5 shadow-sm shadow-sage-500/5">
+            <div class="flex items-center justify-between mb-4">
+              <div class="flex items-center gap-3">
+                <span class="text-2xl">${meal.icon}</span>
+                <div>
+                  <h3 class="font-semibold text-stone-800">${meal.label}</h3>
+                  <p class="text-xs text-stone-400">${meal.time}</p>
+                </div>
+              </div>
+              <div class="text-right">
+                <p class="text-lg font-bold text-sage-600 tabular-nums">${total}</p>
+                <p class="text-[10px] text-stone-400">kcal</p>
+              </div>
+            </div>
+
+            <div class="space-y-0.5 mb-4 min-h-[2rem]">${foodItems}</div>
+
+            <button
+              class="btn add-btn w-full py-2.5 rounded-xl border border-dashed border-sage-200 text-sage-500 text-sm font-medium hover:bg-sage-50 hover:border-sage-300 hover:text-sage-600"
+              data-meal="${meal.id}"
+            >
+              + 添加食物
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderExercises() {
+      const exercises = state.exercises || [];
+      const total = getTotalBurned();
+      els.exerciseTotal.textContent = total;
+
+      if (exercises.length === 0) {
+        els.exerciseList.innerHTML = '<p class="text-sm text-stone-300 py-2 text-center">暂无记录</p>';
+        return;
+      }
+
+      els.exerciseList.innerHTML = exercises.map(e => `
+        <div class="food-item flex items-center justify-between py-2.5 px-3 rounded-xl hover:bg-amber-50/40 group transition-colors">
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-stone-700 truncate">${escHtml(e.name)}</p>
+            <p class="text-xs text-stone-400 mt-0.5">${escHtml(e.confidence)}</p>
+          </div>
+          <div class="flex items-center gap-3 ml-3">
+            <span class="text-sm font-semibold text-amber-600 tabular-nums">−${e.calories} <span class="text-xs font-normal text-stone-400">kcal</span></span>
+            <button
+              class="btn delete-exercise-btn w-7 h-7 rounded-lg opacity-0 group-hover:opacity-100 bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-500 flex items-center justify-center transition-all"
+              data-id="${e.id}" aria-label="删除"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function render() {
+      renderDashboard();
+      renderExercises();
+      renderMeals();
+    }
+
+    function escHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    /* ─── Modal ─── */
+    function openModal(mealId) {
+      activeMeal = mealId;
+      const meal = MEALS.find(m => m.id === mealId);
+      els.modalMealTitle.textContent = meal.label;
+      els.foodName.value = '';
+      els.macroCarbsInput.value = '';
+      els.macroProteinInput.value = '';
+      els.macroFatInput.value = '';
+      els.estimatePreview.classList.add('hidden');
+      els.macroInputs.classList.add('hidden');
+      els.modalSubmit.disabled = true;
+      currentEstimate = null;
+
+      els.modal.classList.remove('hidden');
+      els.modal.classList.add('flex');
+      els.modal.classList.remove('modal-closing');
+      setTimeout(() => els.foodName.focus(), 100);
+    }
+
+    function closeModal() {
+      els.modal.classList.add('modal-closing');
+      setTimeout(() => {
+        els.modal.classList.add('hidden');
+        els.modal.classList.remove('flex', 'modal-closing');
+        activeMeal = null;
+      }, 200);
+    }
+
+    function updateEstimate() {
+      const name = els.foodName.value.trim();
+      if (!name) {
+        els.estimatePreview.classList.add('hidden');
+        els.macroInputs.classList.add('hidden');
+        els.modalSubmit.disabled = true;
+        currentEstimate = null;
+        return;
+      }
+
+      currentEstimate = estimateCalories(name);
+      els.estimateValue.textContent = currentEstimate.calories + ' kcal';
+      els.estimateBadge.textContent = currentEstimate.confidence;
+      els.estimateNote.textContent = currentEstimate.source !== '未知食物'
+        ? `参考：${currentEstimate.source}`
+        : '未在数据库中找到，已按名称智能估算';
+
+      const macros = estimateMacros(name, currentEstimate.calories);
+      els.macroCarbsInput.value = macros.carbs;
+      els.macroProteinInput.value = macros.protein;
+      els.macroFatInput.value = macros.fat;
+
+      els.estimatePreview.classList.remove('hidden');
+      els.macroInputs.classList.remove('hidden');
+      els.modalSubmit.disabled = false;
+    }
+
+    function getSubmitMacros() {
+      const carbs = parseMacroInput(els.macroCarbsInput);
+      const protein = parseMacroInput(els.macroProteinInput);
+      const fat = parseMacroInput(els.macroFatInput);
+      const hasAny = carbs != null || protein != null || fat != null;
+      if (!hasAny) return null;
+      return {
+        carbs: carbs ?? 0,
+        protein: protein ?? 0,
+        fat: fat ?? 0,
+      };
+    }
+
+    function submitFood() {
+      if (!activeMeal || !currentEstimate) return;
+      const name = els.foodName.value.trim();
+      if (!name) return;
+
+      const macros = getSubmitMacros();
+      const item = {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        name,
+        calories: currentEstimate.calories,
+        confidence: currentEstimate.confidence,
+        addedAt: new Date().toISOString(),
+      };
+      if (macros) {
+        item.carbs = macros.carbs;
+        item.protein = macros.protein;
+        item.fat = macros.fat;
+      }
+
+      state.meals[activeMeal].push(item);
+
+      saveState();
+      render();
+      closeModal();
+    }
+
+    function deleteFood(mealId, foodId) {
+      state.meals[mealId] = state.meals[mealId].filter(f => f.id !== foodId);
+      saveState();
+      render();
+    }
+
+    /* ─── Exercise Modal ─── */
+    function openExerciseModal() {
+      els.exerciseName.value = '';
+      els.burnPreview.classList.add('hidden');
+      els.exerciseModalSubmit.disabled = true;
+      currentBurnEstimate = null;
+
+      els.exerciseModal.classList.remove('hidden');
+      els.exerciseModal.classList.add('flex');
+      els.exerciseModal.classList.remove('modal-closing');
+      setTimeout(() => els.exerciseName.focus(), 100);
+    }
+
+    function closeExerciseModal() {
+      els.exerciseModal.classList.add('modal-closing');
+      setTimeout(() => {
+        els.exerciseModal.classList.add('hidden');
+        els.exerciseModal.classList.remove('flex', 'modal-closing');
+      }, 200);
+    }
+
+    function updateBurnEstimate() {
+      const name = els.exerciseName.value.trim();
+      if (!name) {
+        els.burnPreview.classList.add('hidden');
+        els.exerciseModalSubmit.disabled = true;
+        currentBurnEstimate = null;
+        return;
+      }
+
+      currentBurnEstimate = estimateBurn(name);
+      els.burnValue.textContent = currentBurnEstimate.calories + ' kcal';
+      els.burnBadge.textContent = currentBurnEstimate.confidence;
+      els.burnNote.textContent = currentBurnEstimate.source !== '未知运动'
+        ? `参考：${currentBurnEstimate.source} · 约 30 分钟`
+        : '未在数据库中找到，已按名称智能估算 · 约 30 分钟';
+      els.burnPreview.classList.remove('hidden');
+      els.exerciseModalSubmit.disabled = false;
+    }
+
+    function submitExercise() {
+      if (!currentBurnEstimate) return;
+      const name = els.exerciseName.value.trim();
+      if (!name) return;
+
+      state.exercises.push({
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        name,
+        calories: currentBurnEstimate.calories,
+        confidence: currentBurnEstimate.confidence,
+        addedAt: new Date().toISOString(),
+      });
+
+      saveState();
+      render();
+      closeExerciseModal();
+    }
+
+    function deleteExercise(exerciseId) {
+      state.exercises = state.exercises.filter(e => e.id !== exerciseId);
+      saveState();
+      render();
+    }
+
+    /* ─── Events ─── */
+    els.goalInput.addEventListener('change', () => {
+      const val = parseInt(els.goalInput.value, 10);
+      state.goal = isNaN(val) || val < 500 ? 2000 : Math.min(val, 10000);
+      els.goalInput.value = state.goal;
+      saveState();
+      renderDashboard();
+    });
+
+    els.mealsContainer.addEventListener('click', e => {
+      const addBtn = e.target.closest('.add-btn');
+      if (addBtn) { openModal(addBtn.dataset.meal); return; }
+
+      const delBtn = e.target.closest('.delete-btn');
+      if (delBtn) { deleteFood(delBtn.dataset.meal, delBtn.dataset.id); }
+    });
+
+    els.addExerciseBtn.addEventListener('click', openExerciseModal);
+    els.exerciseList.addEventListener('click', e => {
+      const delBtn = e.target.closest('.delete-exercise-btn');
+      if (delBtn) deleteExercise(delBtn.dataset.id);
+    });
+    els.exerciseModalClose.addEventListener('click', closeExerciseModal);
+    els.exerciseModalBackdrop.addEventListener('click', closeExerciseModal);
+    els.exerciseModalSubmit.addEventListener('click', submitExercise);
+    els.exerciseName.addEventListener('input', updateBurnEstimate);
+    els.exerciseName.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !els.exerciseModalSubmit.disabled) submitExercise();
+      if (e.key === 'Escape') closeExerciseModal();
+    });
+
+    els.modalClose.addEventListener('click', closeModal);
+    els.modalBackdrop.addEventListener('click', closeModal);
+    els.modalSubmit.addEventListener('click', submitFood);
+
+    els.foodName.addEventListener('input', updateEstimate);
+    els.foodName.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !els.modalSubmit.disabled) submitFood();
+      if (e.key === 'Escape') closeModal();
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      if (!els.exerciseModal.classList.contains('hidden')) closeExerciseModal();
+      else if (!els.modal.classList.contains('hidden')) closeModal();
+    });
+
+    /* ─── Init ─── */
+    function initDate() {
+      const now = new Date();
+      const opts = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
+      els.todayDate.textContent = now.toLocaleDateString('zh-CN', opts);
+    }
+
+    // Set ring circumference
+    els.ringProgress.style.strokeDasharray = RING_CIRCUMFERENCE;
+
+    initDate();
+    render();
+  </script>
+</body>
+</html>
